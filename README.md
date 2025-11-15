@@ -14,12 +14,9 @@ Proposed multi-region production design described below.
 - High-level Architecture
 - Prerequisites
 - Repository Layout
-- Setup
 - Deployment
 - Lambda Functions
-- Configuration Variables
 - Future Enhancements
-- License
 
 ---
 
@@ -115,25 +112,6 @@ Top-level files:
 
 ---
 
-## Setup
-
-1. Secure AWS credentials (env vars, aws-vault, or SSO).  
-2. Create remote backend before collaborative work. Example:
-
-terraform {
-  backend "s3" {
-    bucket         = "swifthaul-terraform-state-<account-id>"
-    key            = "swifthaul/prod/terraform.tfstate"
-    region         = "us-west-2"
-    dynamodb_table = "swifthaul-terraform-locks"
-    encrypt        = true
-  }
-}
-
-3. CI Recommendations: run `terraform fmt` and `terraform validate` on PRs; use short-lived roles for plan & apply.
-
----
-
 ## Deployment
 
 - Prototype: Single-region (ap-southeast-1)  
@@ -162,35 +140,6 @@ terraform destroy
 
 ---
 
-## Configuration Variables
-
-variables.tf
-
-variable "environment" { type = string, default = "prod" }  
-variable "regions" { type = list(string), default = ["ap-southeast-1"] }  
-variable "account_id" { type = string }  
-variable "lambda_memory_mb" { type = number, default = 512 }  
-variable "lambda_timeout" { type = number, default = 30 }  
-
-prod.tfvars
-
-environment      = "prod"  
-regions          = ["ap-southeast-1"]  
-account_id       = "123456789012"  
-lambda_memory_mb = 512  
-lambda_timeout   = 30  
-
-Lambda Environment Variables:
-
-- PARCELS_TABLE=swifthaul-parcels  
-- TELEMETRY_TABLE=swifthaul-telemetry  
-- ROUTES_TABLE=swifthaul-routes  
-- REGION=ap-southeast-1  
-
-> Secrets: store in AWS Secrets Manager or SSM Parameter Store.
-
----
-
 ## Future Enhancements
 
 - Multi-region deployment  
@@ -201,11 +150,6 @@ Lambda Environment Variables:
 
 ---
 
-## License
-
-Add a LICENSE file (Apache-2.0 or MIT) to clarify permitted use.
-
----
 
 *This README documents the prototype (single-region) and proposed multi-region design. Educational / proof-of-concept only.*
 
