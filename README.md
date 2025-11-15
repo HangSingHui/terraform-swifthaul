@@ -1,107 +1,95 @@
-```markdown
 # SwiftHaul Logistics — Serverless Logistics Tracking Platform
 
-⚠️ ACADEMIC PROJECT / PROOF OF CONCEPT  
-This was a student capstone project demonstrating cloud architecture concepts.  
-Implementation was done in a single AWS region (ap-southeast-1) as a working prototype.  
-The architecture document describes a proposed 5-region production design.
+⚠️ Academic Project / Proof of Concept  
+Student capstone demonstrating cloud architecture concepts.  
+Prototype deployed in single AWS region (ap-southeast-1).  
+Proposed multi-region production design described below.
 
-IMPORTANT SECURITY NOTE: terraform.tfstate and terraform.tfstate.backup are present in this repository. Terraform state can contain sensitive information. See "Cleanup & safety" below for immediate remediation steps.
+> Important: terraform.tfstate and terraform.tfstate.backup are included. These files may contain sensitive info.
 
 ---
 
-## Table of contents
+## Table of Contents
 - Overview
-- High-level architecture (diagram & description)
+- High-level Architecture
 - Prerequisites
-- Repository layout
-- Setup (local + CI)
-- Deployment (design vs implementation)
-- Lambda function descriptions
-- Configuration variables (examples)
-- Usage examples
-- Monitoring, testing & troubleshooting
-- Cost & scaling considerations
-- Cleanup & safety / next steps
-- Future Enhancements (Not Implemented)
+- Repository Layout
+- Setup
+- Deployment
+- Lambda Functions
+- Configuration Variables
+- Future Enhancements
 - License
 
 ---
 
 ## Overview
-SwiftHaul is a multi-region, serverless, event-driven logistics platform design that provides real-time parcel tracking, GPS telemetry ingestion, and traffic-aware routing.
 
-- Designed for 99.99% uptime (not tested at production scale)
-- Designed tracking-update latency: < 5s (prototype demonstrates the end-to-end flow but not production-scale latency guarantees)
-- Designed for: ~170,000 parcels/day (prototype tested with mock data)
-- Designed for 2,500+ vehicles (prototype tested with simulated devices)
+SwiftHaul is a serverless, event-driven logistics platform providing:
+
+- Real-time parcel tracking
+- GPS telemetry ingestion
+- Traffic-aware routing
+
+Prototype goals:
+
+- Uptime: ~99.99% (not tested at production scale)
+- Tracking latency: <5s (prototype demonstrates flow)
+- Load: ~170,000 parcels/day (mock-tested)
+- Vehicles: ~2,500+ (simulated devices)
 
 Key principles:
-- Serverless compute (Lambda) for elasticity
-- Event-driven architecture with SQS + EventBridge
-- DynamoDB Global Tables for cross-region replication in the proposed design
-- IoT Core for MQTT telemetry ingestion (prototype uses simulated device data)
-- Amazon Location Service for traffic-aware routing and optimization
-- React SPA frontend hosted via S3 + CloudFront (prototype artifacts included)
 
-This repository contains the Terraform code and Lambda packaging used to build the prototype implementation (single-region ap-southeast-1). The architecture sections describe a proposed 5-region production design.
+- Serverless compute (AWS Lambda)
+- Event-driven architecture (SQS + EventBridge)
+- DynamoDB Global Tables (design for multi-region replication)
+- AWS IoT Core for telemetry ingestion (prototype uses simulation)
+- Amazon Location Service for routing
+- React SPA frontend via S3 + CloudFront
 
 ---
 
-## High-level architecture (diagram & description)
-Conceptual ASCII diagram:
+## High-level Architecture
 
-                     +--------------------+        +----------------------+
-                     |   Delivery Device  |  MQTT  |      AWS IoT Core     |
-    GPS telemetry -->| (vehicle tracker)  |------->| (Authentication &     |
-                     +--------------------+        |  message ingestion)   |
-                                                     +---+---+---+---+---+
-                                                         |   |
-                                                         |   V
-                                                   +-----+   +------+
-                                                   | SQS |   | Lambda |
-                                                   |(buffer)|  processFilterGPSData
-                                                   +-----+   +---------+
-                                                         |         |
-                                                         V         V
-               Warehouse scan -> API Gateway -> extractParcelDetails Lambda -> DynamoDB (Global Tables - design)
-                                                         |
-                                                         V
-                                              triggerRouteGeneration Lambda -> Location Service API
-                                                         |
-                                                         V
-                                           retrieveRealTimeData Lambda (WebSocket) -> Web Clients
-                                                         |
-                                                  +------+-------+
-                                                  | CloudWatch    |
-                                                  | Alarms/Logs   |
-                                                  +---------------+
-                                                  + Route53 + WAF
-                                                  + CloudFront + S3
-                                                  + Cognito + ACM
+Flow overview:
 
-Description:
-- Devices publish to IoT Core over MQTT. For the prototype, telemetry is typically simulated and fed into the stack.
-- IoT rules can forward messages into SQS for durable buffering.
-- processFilterGPSData Lambda consumes SQS messages, validates and enriches telemetry, and writes to DynamoDB (prototype uses single-region tables; the repository includes configuration for Global Tables as a proposed design).
-- API Gateway exposes REST and WebSocket endpoints. extractParcelDetails handles parcel intake; retrieveRealTimeData handles live subscription and push of updates.
-- triggerRouteGeneration calls Amazon Location Service to compute optimized, traffic-aware routes.
+1. Devices publish telemetry to IoT Core over MQTT.
+2. IoT rules forward messages to SQS for buffering.
+3. processFilterGPSData Lambda consumes SQS messages, validates/enriches telemetry, writes to DynamoDB.
+4. API Gateway exposes endpoints:
+   - extractParcelDetails: parcel intake
+   - retrieveRealTimeData: live telemetry updates
+5. triggerRouteGeneration Lambda calls Amazon Location Service for routing.
+
+Components:
+
+- IoT Core — device telemetry ingestion
+- SQS — buffering and durability
+- Lambdas — processing, routing, WebSocket updates
+- DynamoDB — storage (prototype: single region)
+- API Gateway — REST & WebSocket
+- CloudFront + S3 — frontend hosting
+- CloudWatch / X-Ray — monitoring and tracing
+- Route53 + WAF — DNS and security
 
 ---
 
 ## Prerequisites
-- Terraform (recommended >= 1.4.x; respect required_version in TF files if set)
-- AWS CLI configured with a user/role that can manage the resources (for the prototype, deployment used ap-southeast-1)
-- Node.js & npm (to build frontend and/or package Lambdas if needed)
-- zip (or similar) for packaging Lambda artifacts
-- Optional: jq, aws-vault or SSO tooling for secure credential handling
 
-Recommended permissions for initial bootstrapping: elevated deployer role. After bootstrapping, adopt least-privilege roles for CI.
+- Terraform >= 1.4.x
+- AWS CLI configured with deploy permissions
+- Node.js & npm (frontend build / Lambda packaging)
+- zip (or similar) for Lambda packaging
+- Optional: jq, aws-vault or SSO
+
+Recommended: elevated deployer role for initial bootstrap; use least-privilege roles after.
 
 ---
 
-## Repository layout
-Top-level Terraform files are split by AWS service. Root files include:
+## Repository Layout
+
+Top-level files:
+
 - api_gateway.tf
 - cloudfront.tf
 - cloudwatch.tf
@@ -119,214 +107,105 @@ Top-level Terraform files are split by AWS service. Root files include:
 - s3.tf
 - sqs.tf
 - budget.tf
-- frontend/ (React SPA source or artifacts)
-- lambda/ (packaged function code and/or build artifacts)
-- terraform.tfstate & terraform.tfstate.backup (committed — see Cleanup & safety)
+- frontend/ (React SPA source or build artifacts)
+- lambda/ (Lambda packaged code)
+- terraform.tfstate & terraform.tfstate.backup
 
-These files reflect the prototype implementation and the design artifacts for the multi-region proposal.
-
----
-
-## Setup (local & CI)
-1. Secure credentials
-   - Use environment-based credentials or a secure helper (aws-vault, SSO).
-2. Immediately address committed state (see Cleanup & safety).
-3. Create a remote backend for state before collaborative work (recommended: S3 + DynamoDB lock).
-4. Example backend snippet (backend.tf) — add this before running terraform init:
-   terraform {
-     backend "s3" {
-       bucket         = "swifthaul-terraform-state-<account-id>"
-       key            = "swifthaul/prod/terraform.tfstate"
-       region         = "us-west-2"
-       dynamodb_table = "swifthaul-terraform-locks"
-       encrypt        = true
-     }
-   }
-
-5. CI (recommended for future work):
-   - Validate formatting and run terraform validate on PRs.
-   - For authenticated plan & apply in CI, use short-lived role assumption.
+> Note: State files are committed.
 
 ---
 
-## Deployment (design vs implementation)
-Important clarifications for this repository:
-- Multi-region deployment is DESIGNED but not implemented in the prototype.
-- Actual implementation is single-region (Singapore / ap-southeast-1).
-- Blue/Green deployment strategy is PROPOSED, not implemented in automation for the prototype.
+## Setup
 
-Suggested multi-region approach (DESIGN):
-- Use modules with provider aliases and for_each over a regions list to create replicated resources.
-- DynamoDB Global Tables to replicate telemetry and parcel data across regions.
-- Centralized CI/CD with environment-specific backends and state separation.
+1. Secure AWS credentials (env vars, aws-vault, or SSO).  
+2. Create remote backend before collaborative work. Example:
 
-Prototype deployment steps (single-region ap-southeast-1):
-1. Configure backend (or use local state for quick tests).
-2. terraform init
-3. terraform fmt && terraform validate
-4. terraform plan -var-file=prod.tfvars -out=prod.plan
-5. terraform apply "prod.plan"
-6. terraform destroy when finished
-
-Blue/Green (PROPOSED):
-- Publish Lambda versions, use aliases (candidate/live), shift traffic via API Gateway canary or Route53 weighted records. This is a proposed deployment pattern and not implemented in automated pipelines in this repository.
-
----
-
-## Lambda functions (detailed)
-These Lambda functions were implemented and tested with mock/simulated data in a single region.
-
-1. extractParcelDetails
-   - Trigger: API Gateway (REST)
-   - Purpose: Receive parcel creation events (scans), validate payloads, create items in DynamoDB.
-   - Env vars: PARCELS_TABLE, REGION, ENABLE_EVENTS
-   - Timeout: 10s, Memory: 512MB
-
-2. updateParcelStatus
-   - Trigger: Scheduled (EventBridge) or batch process via API
-   - Purpose: Batch updates and reconciliation
-   - Timeout: 60s, Memory: 1024MB
-
-3. processFilterGPSData
-   - Trigger: SQS (from IoT Core rules)
-   - Purpose: Validate and filter GPS telemetry, enrich and write to telemetry table
-   - Concurrency/Scaling: Prototype uses basic settings; use reserved concurrency for production
-
-4. retrieveRealTimeData
-   - Trigger: API Gateway WebSocket
-   - Purpose: Manage subscriptions and push live telemetry to clients
-
-5. triggerRouteGeneration
-   - Trigger: Event or API
-   - Purpose: Call Amazon Location Service to compute optimized routes and store results
-
-Operational notes:
-- Lambdas in the prototype were exercised with simulated devices and mock data flows.
-- For production, use Layers, provisioned concurrency for critical handlers, and granular IAM policies.
-
----
-
-## Configuration variables (examples)
-Example variables.tf fragment:
-```hcl
-variable "environment" {
-  type    = string
-  default = "prod"
+terraform {
+  backend "s3" {
+    bucket         = "swifthaul-terraform-state-<account-id>"
+    key            = "swifthaul/prod/terraform.tfstate"
+    region         = "us-west-2"
+    dynamodb_table = "swifthaul-terraform-locks"
+    encrypt        = true
+  }
 }
 
-variable "regions" {
-  type    = list(string)
-  default = ["ap-southeast-1"]
-}
-
-variable "account_id" {
-  type = string
-}
-
-variable "lambda_memory_mb" {
-  type    = number
-  default = 512
-}
-
-variable "lambda_timeout" {
-  type    = number
-  default = 30
-}
-```
-
-Example prod.tfvars:
-```hcl
-environment        = "prod"
-regions            = ["ap-southeast-1"]
-account_id         = "123456789012"
-lambda_memory_mb   = 512
-lambda_timeout     = 30
-```
-
-Environment variables for Lambdas (examples):
-- PARCELS_TABLE=swifthaul-parcels
-- TELEMETRY_TABLE=swifthaul-telemetry
-- ROUTES_TABLE=swifthaul-routes
-- REGION=ap-southeast-1
-
-Secrets: Use AWS Secrets Manager or SSM Parameter Store; do not hardcode.
+3. CI Recommendations: run `terraform fmt` and `terraform validate` on PRs; use short-lived roles for plan & apply.
 
 ---
 
-## Usage examples
-Note: These are examples based on the designed architecture. Actual implementation includes basic versions of these endpoints for demonstration purposes.
+## Deployment
 
-1. Create a plan and apply (example):
-   terraform init -backend-config="bucket=swifthaul-terraform-state-123456789012" \
-                  -backend-config="key=swifthaul/prod/terraform.tfstate" \
-                  -backend-config="region=us-west-2"
-   terraform plan -var-file=prod.tfvars -out=prod.plan
-   terraform apply "prod.plan"
+- Prototype: Single-region (ap-southeast-1)  
+- Design: Multi-region with provider aliases, DynamoDB Global Tables  
+- Blue/Green Deployment (Proposed): Lambda versions + aliases, API Gateway canary, Route53 weighted records  
 
-2. Publish new Lambda version and shift traffic (manual example - proposed):
-   aws lambda publish-version --function-name extractParcelDetails --description "v2025-11-15"
-   aws lambda update-alias --function-name extractParcelDetails --name candidate --function-version <new-version>
+Prototype deployment:
 
-3. Sample REST call to create a parcel (prototype endpoint may differ):
-   curl -X POST "https://<api-id>.execute-api.ap-southeast-1.amazonaws.com/prod/parcels" \
-     -H "Authorization: Bearer <cognito_token>" \
-     -H "Content-Type: application/json" \
-     -d '{"parcelId":"P123456","weight":2.3,"origin":"SGSIN","destination":"USLAX","scannedBy":"WH01"}'
-
-4. Publish GPS telemetry to IoT Core (simulated device payload):
-   aws iot-data publish --topic "swifthaul/gps" --cli-binary-format raw-in-base64-out \
-     --payload '{"deviceId":"VEH-001","lat":1.3521,"lon":103.8198,"ts":1699999999}' --region ap-southeast-1
-
-5. Connect to WebSocket for live updates (JS example):
-   const ws = new WebSocket('wss://<websocket-api-id>.execute-api.ap-southeast-1.amazonaws.com/prod');
-   ws.onopen = () => ws.send(JSON.stringify({ action: 'subscribe', parcelId: 'P123456' }));
-   ws.onmessage = (msg) => console.log('live update', msg.data);
+terraform init  
+terraform fmt && terraform validate  
+terraform plan -var-file=prod.tfvars -out=prod.plan  
+terraform apply "prod.plan"  
+terraform destroy
 
 ---
 
-## Monitoring, testing & troubleshooting
-- CloudWatch (logs & metrics): Lambda durations, errors, throttles; SQS approximate age; DynamoDB consumed capacity
-- X-Ray: Useful for tracing API Gateway → Lambda → DynamoDB → Location Service paths
-- Canary tests: synthetic API checks and Route53 health checks (design)
-- Load testing: Prototype uses simulated loads; comprehensive load testing is a future enhancement
+## Lambda Functions
+
+| Lambda Function        | Trigger                 | Purpose                                           |
+|------------------------|------------------------|-------------------------------------------------|
+| extractParcelDetails   | API Gateway (REST)      | Parcel intake & DynamoDB write                 |
+| updateParcelStatus     | EventBridge / batch     | Batch updates & reconciliation                |
+| processFilterGPSData   | SQS                     | Validate, enrich, write telemetry             |
+| retrieveRealTimeData   | API Gateway WebSocket   | Push live updates                              |
+| triggerRouteGeneration | Event/API               | Call Location Service for routing             |
 
 ---
 
-## Cost & scaling considerations
-- DynamoDB: consider On-Demand or provisioned throughput tuned to telemetry write patterns
-- Location Service: per-route billing—cache results where possible
-- Data retention: use TTLs to limit telemetry retention and offload old data to S3/Glacier
+## Configuration Variables
+
+variables.tf
+
+variable "environment" { type = string, default = "prod" }  
+variable "regions" { type = list(string), default = ["ap-southeast-1"] }  
+variable "account_id" { type = string }  
+variable "lambda_memory_mb" { type = number, default = 512 }  
+variable "lambda_timeout" { type = number, default = 30 }  
+
+prod.tfvars
+
+environment      = "prod"  
+regions          = ["ap-southeast-1"]  
+account_id       = "123456789012"  
+lambda_memory_mb = 512  
+lambda_timeout   = 30  
+
+Lambda Environment Variables:
+
+- PARCELS_TABLE=swifthaul-parcels  
+- TELEMETRY_TABLE=swifthaul-telemetry  
+- ROUTES_TABLE=swifthaul-routes  
+- REGION=ap-southeast-1  
+
+> Secrets: store in AWS Secrets Manager or SSM Parameter Store.
 
 ---
 
-## Cleanup & safety (immediate actions)
-1. Remove committed terraform.tfstate from repo:
-   git rm --cached terraform.tfstate terraform.tfstate.backup
-   Add to .gitignore:
-     terraform.tfstate
-     terraform.tfstate.backup
-     .terraform/
-2. Scrub history if sensitive information was exposed (BFG or git filter-repo).
-3. Rotate any credentials that may be present in state or referenced by roles.
-4. Migrate to a remote backend and run `terraform init -migrate-state`.
+## Future Enhancements
 
----
-
-## Future Enhancements (Not Implemented)
-- Multi-region deployment
-- Blue/Green deployment automation
-- Production CI/CD pipeline
-- Full IoT device integration
-- Comprehensive load testing
-
-These are planned or proposed capabilities to bring the design to production readiness.
+- Multi-region deployment  
+- Blue/Green deployment automation  
+- Production CI/CD pipeline  
+- Full IoT device integration  
+- Comprehensive load testing  
 
 ---
 
 ## License
-Add a LICENSE file (e.g., Apache-2.0 or MIT) to clarify permitted use.
+
+Add a LICENSE file (Apache-2.0 or MIT) to clarify permitted use.
 
 ---
 
-This README documents the prototype implementation (single-region) and the proposed multi-region production design. Treat the repository as an educational capstone/proof-of-concept rather than a production-ready codebase.
-```
+*This README documents the prototype (single-region) and proposed multi-region design. Educational / proof-of-concept only.*
+
